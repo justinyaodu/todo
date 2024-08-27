@@ -1,4 +1,12 @@
 /**
+ * @param {never} value
+ * @returns {never}
+ */
+function assertExhaustive(value) {
+  throw new Error(`Non-exhaustive for value: ${JSON.stringify(value)}`);
+}
+
+/**
  * @param {boolean} assertion
  */
 function assert(assertion) {
@@ -44,15 +52,6 @@ function assertJSONEqual(a, b) {
 /** @typedef {{ [K in keyof Date as Exclude<K, `set${string}`>]: Date[K] }} ImmutableDate */
 
 /**
- * @param {ImmutableDate} date
- * @returns {string}
- */
-function serializeDate(date) {
-  const tzOffsetMs = date.getTimezoneOffset() * 60000;
-  return new Date(date.valueOf() - tzOffsetMs).toISOString().slice(0, -1);
-}
-
-/**
  * @param {ImmutableDate} a
  * @param {ImmutableDate} b
  */
@@ -60,6 +59,15 @@ function assertDatesEqual(a, b) {
   if (a.valueOf() !== b.valueOf()) {
     throw new Error(`Assertion failed: ${String(a)} !== ${String(b)}`);
   }
+}
+
+/**
+ * @param {ImmutableDate} date
+ * @returns {string}
+ */
+function serializeDate(date) {
+  const tzOffsetMs = date.getTimezoneOffset() * 60000;
+  return new Date(date.valueOf() - tzOffsetMs).toISOString().slice(0, -1);
 }
 
 assertEqual(
@@ -157,7 +165,7 @@ assertEqual(serializeDuration({}), "PT0S");
  */
 function parseDuration(s) {
   const regex =
-    /^P(?:([0-9]+)Y)?(?:([0-9]+)M)?(?:([0-9]+)D)?(?:T(?:([0-9]+)H)?(?:([0-9]+)M)?(?:([0-9.]+)S)?)?$/;
+    /^P(?:(-?[0-9]+)Y)?(?:(-?[0-9]+)M)?(?:(-?[0-9]+)D)?(?:T(?:(-?[0-9]+)H)?(?:(-?[0-9]+)M)?(?:(-?[0-9.]+)S)?)?$/;
 
   /** @type {(string | undefined)[] | null} */
   const groups = regex.exec(s);
@@ -174,8 +182,8 @@ function parseDuration(s) {
     return null;
   }
   const secondsAndMs = Math.round(floatSeconds * 1000);
-  const seconds = Math.floor(secondsAndMs / 1000);
   const milliseconds = secondsAndMs % 1000;
+  const seconds = (secondsAndMs - milliseconds) / 1000;
 
   if (years) {
     duration.years = parseInt(years);
@@ -212,6 +220,15 @@ assertJSONEqual(parseDuration("P1Y2M3DT4H5M6.007S"), {
   minutes: 5,
   seconds: 6,
   milliseconds: 7,
+});
+assertJSONEqual(parseDuration("P-1Y-2M-3DT-4H-5M-6.007S"), {
+  years: -1,
+  months: -2,
+  days: -3,
+  hours: -4,
+  minutes: -5,
+  seconds: -6,
+  milliseconds: -7,
 });
 assertJSONEqual(parseDuration("P2M"), { months: 2 });
 
@@ -370,6 +387,133 @@ assertJSONEqual(parseRepeat("delay P7D"), {
   repeat: "delay",
   delay: { days: 7 },
 });
+
+/**
+ * @param {Repeat} repeat
+ * @param {ImmutableDate} from
+ * @param {boolean} forward
+ * @returns {ImmutableDate | null}
+ */
+function repeatSeek(repeat, from, forward) {
+  switch (repeat.repeat) {
+    case "never":
+    case "manual":
+      return null;
+    case "delay":
+      return datePlusDuration(
+        from,
+        forward ? repeat.delay : negateDuration(repeat.delay),
+      );
+    case "schedule": {
+      const floor = floorDate(from, repeat.base, repeat.period);
+      const bases = [
+        datePlusDuration(floor, negateDuration(repeat.period)),
+        floor,
+        datePlusDuration(floor, repeat.period),
+      ];
+      const dates = [];
+      for (const base of bases) {
+        for (const offset of repeat.offsets) {
+          dates.push(datePlusDuration(base, offset));
+        }
+      }
+      let closest = null;
+      let sign = forward ? 1 : -1;
+      for (const date of dates) {
+        if (
+          sign * from.valueOf() < sign * date.valueOf() &&
+          (closest === null || sign * date.valueOf() < sign * closest.valueOf())
+        ) {
+          closest = date;
+        }
+      }
+      return closest;
+    }
+    default:
+      assertExhaustive(repeat);
+  }
+}
+
+assertDatesEqual(
+  assertNonNull(
+    repeatSeek(
+      { repeat: "delay", delay: { days: 3 } },
+      new Date("2021-12-25T12:20:00"),
+      true,
+    ),
+  ),
+  new Date("2021-12-28T12:20:00"),
+);
+assertDatesEqual(
+  assertNonNull(
+    repeatSeek(
+      { repeat: "delay", delay: { days: 3 } },
+      new Date("2021-12-25T12:20:00"),
+      false,
+    ),
+  ),
+  new Date("2021-12-22T12:20:00"),
+);
+assertDatesEqual(
+  assertNonNull(
+    repeatSeek(
+      {
+        repeat: "schedule",
+        base: new Date("2023-01-01"),
+        period: { days: 7 },
+        offsets: [{}, { days: 6 }],
+      },
+      new Date("2023-01-01"),
+      true,
+    ),
+  ),
+  new Date("2023-01-07"),
+);
+assertDatesEqual(
+  assertNonNull(
+    repeatSeek(
+      {
+        repeat: "schedule",
+        base: new Date("2023-01-01"),
+        period: { days: 7 },
+        offsets: [{}, { days: 6 }],
+      },
+      new Date("2023-01-01"),
+      false,
+    ),
+  ),
+  new Date("2022-12-31"),
+);
+assertDatesEqual(
+  assertNonNull(
+    repeatSeek(
+      {
+        repeat: "schedule",
+        base: new Date("2023-01-01"),
+        period: { days: 7 },
+        offsets: [{}, { days: 6 }],
+      },
+      new Date("2023-01-18"),
+      true,
+    ),
+  ),
+  new Date("2023-01-21"),
+);
+assertDatesEqual(
+  assertNonNull(
+    repeatSeek(
+      {
+        repeat: "schedule",
+        base: new Date("2023-01-01"),
+        period: { days: 7 },
+        offsets: [{}, { days: 6 }],
+      },
+      new Date("2023-01-18"),
+      false,
+    ),
+  ),
+  new Date("2023-01-15"),
+);
 
 /** @typedef {{ name: string, description: string, notes: string, scheduledDate: Date | null, pointsBase: number, pointsPerMinute: number, tags: string[] }} BaseTask */
 /** @typedef {BaseTask & { startDate: null, durationMs: null }} PendingTask */
