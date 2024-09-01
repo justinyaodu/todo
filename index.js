@@ -38,14 +38,15 @@ function assertNonNull(value) {
 }
 
 /**
- * @param {unknown} a
- * @param {unknown} b
+ * @template T
+ * @param {T} a
+ * @param {T} b
  */
 function assertJSONEqual(a, b) {
-  let strA = JSON.stringify(a);
-  let strB = JSON.stringify(b);
+  let strA = JSON.stringify(a, null, 2);
+  let strB = JSON.stringify(b, null, 2);
   if (strA !== strB) {
-    throw new Error(`Assertion failed: ${strA} !== ${strB}`);
+    throw new Error(`Assertion failed: values are not equal\n${strA}\n${strB}`);
   }
 }
 
@@ -334,10 +335,10 @@ assertDatesEqual(
   new Date("2021-12-25T00:00"),
 );
 
-/** @typedef {{ repeat: "never" }} NeverRepeat */
-/** @typedef {{ repeat: "manual" }} ManualRepeat */
-/** @typedef {{ repeat: "delay", delay: Duration }} DelayRepeat */
-/** @typedef {{ repeat: "schedule", base: ImmutableDate, period: Duration, offsets: Duration[] }} ScheduleRepeat */
+/** @typedef {{ type: "never" }} NeverRepeat */
+/** @typedef {{ type: "manual" }} ManualRepeat */
+/** @typedef {{ type: "delay", delay: Duration }} DelayRepeat */
+/** @typedef {{ type: "schedule", base: ImmutableDate, period: Duration, offsets: Duration[] }} ScheduleRepeat */
 /** @typedef {NeverRepeat | ManualRepeat | DelayRepeat | ScheduleRepeat} Repeat */
 
 /**
@@ -346,10 +347,10 @@ assertDatesEqual(
  */
 function parseRepeat(s) {
   if (s === "never") {
-    return { repeat: "never" };
+    return { type: "never" };
   }
   if (s === "manual") {
-    return { repeat: "manual" };
+    return { type: "manual" };
   }
   const split = s.split(" ");
   if (split.length === 0) {
@@ -360,7 +361,7 @@ function parseRepeat(s) {
     if (delay === null) {
       return null;
     }
-    return { repeat: "delay", delay };
+    return { type: "delay", delay };
   }
   if (split[0] === "schedule" && split.length >= 4) {
     const base = parseDate(split[1]);
@@ -376,15 +377,15 @@ function parseRepeat(s) {
       }
       offsets.push(offset);
     }
-    return { repeat: "schedule", base, period, offsets };
+    return { type: "schedule", base, period, offsets };
   }
   return null;
 }
 
-assertJSONEqual(parseRepeat("never"), { repeat: "never" });
-assertJSONEqual(parseRepeat("manual"), { repeat: "manual" });
+assertJSONEqual(parseRepeat("never"), { type: "never" });
+assertJSONEqual(parseRepeat("manual"), { type: "manual" });
 assertJSONEqual(parseRepeat("delay P7D"), {
-  repeat: "delay",
+  type: "delay",
   delay: { days: 7 },
 });
 
@@ -395,7 +396,7 @@ assertJSONEqual(parseRepeat("delay P7D"), {
  * @returns {ImmutableDate | null}
  */
 function repeatSeek(repeat, from, forward) {
-  switch (repeat.repeat) {
+  switch (repeat.type) {
     case "never":
     case "manual":
       return null;
@@ -434,10 +435,18 @@ function repeatSeek(repeat, from, forward) {
   }
 }
 
+assertJSONEqual(
+  repeatSeek({ type: "never" }, new Date("2021-12-25T12:20:00"), true),
+  null,
+);
+assertJSONEqual(
+  repeatSeek({ type: "manual" }, new Date("2021-12-25T12:20:00"), true),
+  null,
+);
 assertDatesEqual(
   assertNonNull(
     repeatSeek(
-      { repeat: "delay", delay: { days: 3 } },
+      { type: "delay", delay: { days: 3 } },
       new Date("2021-12-25T12:20:00"),
       true,
     ),
@@ -447,7 +456,7 @@ assertDatesEqual(
 assertDatesEqual(
   assertNonNull(
     repeatSeek(
-      { repeat: "delay", delay: { days: 3 } },
+      { type: "delay", delay: { days: 3 } },
       new Date("2021-12-25T12:20:00"),
       false,
     ),
@@ -458,7 +467,7 @@ assertDatesEqual(
   assertNonNull(
     repeatSeek(
       {
-        repeat: "schedule",
+        type: "schedule",
         base: new Date("2023-01-01"),
         period: { days: 7 },
         offsets: [{}, { days: 6 }],
@@ -473,7 +482,7 @@ assertDatesEqual(
   assertNonNull(
     repeatSeek(
       {
-        repeat: "schedule",
+        type: "schedule",
         base: new Date("2023-01-01"),
         period: { days: 7 },
         offsets: [{}, { days: 6 }],
@@ -488,7 +497,7 @@ assertDatesEqual(
   assertNonNull(
     repeatSeek(
       {
-        repeat: "schedule",
+        type: "schedule",
         base: new Date("2023-01-01"),
         period: { days: 7 },
         offsets: [{}, { days: 6 }],
@@ -503,7 +512,7 @@ assertDatesEqual(
   assertNonNull(
     repeatSeek(
       {
-        repeat: "schedule",
+        type: "schedule",
         base: new Date("2023-01-01"),
         period: { days: 7 },
         offsets: [{}, { days: 6 }],
@@ -515,7 +524,433 @@ assertDatesEqual(
   new Date("2023-01-15"),
 );
 
-/** @typedef {{ name: string, description: string, notes: string, scheduledDate: Date | null, pointsBase: number, pointsPerMinute: number, tags: string[] }} BaseTask */
-/** @typedef {BaseTask & { startDate: null, durationMs: null }} PendingTask */
-/** @typedef {BaseTask & { startDate: Date, durationMs: null }} StartedTask */
-/** @typedef {BaseTask & { startDate: Date, durationMs: number }} CompletedTask */
+/**
+ * @param {Repeat} repeat
+ * @param {ImmutableDate | null} near
+ * @returns {Repeat}
+ */
+function repeatRebase(repeat, near) {
+  if (near === null) {
+    return repeat;
+  }
+
+  switch (repeat.type) {
+    case "never":
+    case "manual":
+    case "delay":
+      return repeat;
+  }
+
+  return {
+    ...repeat,
+    base: floorDate(near, repeat.base, repeat.period),
+  };
+}
+
+assertJSONEqual(
+  repeatRebase({ type: "never" }, new Date("2021-12-25T12:20:00")),
+  { type: "never" },
+);
+assertJSONEqual(
+  repeatRebase({ type: "manual" }, new Date("2021-12-25T12:20:00")),
+  { type: "manual" },
+);
+assertJSONEqual(
+  repeatRebase(
+    { type: "delay", delay: { days: 7 } },
+    new Date("2021-12-25T12:20:00"),
+  ),
+  { type: "delay", delay: { days: 7 } },
+);
+assertJSONEqual(
+  repeatRebase(
+    {
+      type: "schedule",
+      base: new Date("2021-11-11T00:00:00"),
+      period: { days: 1 },
+      offsets: [{}],
+    },
+    new Date("2021-12-25T12:20:00"),
+  ),
+  {
+    type: "schedule",
+    base: new Date("2021-12-25T00:00:00"),
+    period: { days: 1 },
+    offsets: [{}],
+  },
+);
+
+/** @typedef {{ name: string, scheduledDate: ImmutableDate | null, repeat: Repeat }} BaseTask */
+/** @typedef {BaseTask & { state: "pending", startEpochMs: null, endEpochMs: null }} PendingTask */
+/** @typedef {BaseTask & { state: "started", startEpochMs: number, endEpochMs: null }} StartedTask */
+/** @typedef {BaseTask & { state: "completed", startEpochMs: number, endEpochMs: number }} CompletedTask */
+/** @typedef {PendingTask | StartedTask | CompletedTask} Task */
+
+/** @typedef {{ type: "delete" }} DeleteAction */
+/** @typedef {{ type: "start" }} StartAction */
+/** @typedef {{ type: "cancel" }} CancelAction */
+/** @typedef {{ type: "complete" }} CompleteAction */
+/** @typedef {{ type: "seekBack" }} SeekBackAction */
+/** @typedef {{ type: "seekForward" }} SeekForwardAction */
+/** @typedef {DeleteAction | StartAction | CancelAction | CompleteAction | SeekBackAction | SeekForwardAction} Action */
+
+/**
+ * @param {Action} action
+ * @param {Task} task
+ * @param {ImmutableDate} now
+ * @returns {Task[]}
+ */
+function applyAction(action, task, now) {
+  switch (action.type) {
+    case "delete":
+      return [];
+    case "start":
+      return [
+        {
+          ...task,
+          state: "started",
+          startEpochMs: now.valueOf(),
+          endEpochMs: null,
+        },
+      ];
+    case "cancel":
+      return [
+        {
+          ...task,
+          state: "pending",
+          startEpochMs: null,
+          endEpochMs: null,
+        },
+      ];
+    case "complete": {
+      /** @type {Task[]} */
+      const tasks = [
+        {
+          ...task,
+          repeat: { type: "never" },
+          state: "completed",
+          startEpochMs: task.startEpochMs ?? now.valueOf(),
+          endEpochMs: now.valueOf(),
+        },
+      ];
+
+      if (task.repeat.type !== "never") {
+        const repeat = repeatRebase(task.repeat, now);
+        const scheduledDate = repeatSeek(repeat, now, true);
+        tasks.push({
+          ...task,
+          scheduledDate,
+          repeat,
+          state: "pending",
+          startEpochMs: null,
+          endEpochMs: null,
+        });
+      }
+
+      return tasks;
+    }
+    case "seekBack":
+    case "seekForward": {
+      const forward = action.type === "seekForward";
+      const repeat = repeatRebase(task.repeat, task.scheduledDate);
+      const scheduledDate =
+        task.scheduledDate === null
+          ? null
+          : (repeatSeek(repeat, task.scheduledDate, forward) ??
+            task.scheduledDate);
+      return [{ ...task, scheduledDate, repeat }];
+    }
+  }
+}
+
+assertJSONEqual(
+  applyAction(
+    { type: "delete" },
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: { type: "never" },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+    new Date("2021-12-25T12:20:00"),
+  ),
+  [],
+);
+assertJSONEqual(
+  applyAction(
+    { type: "start" },
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: { type: "never" },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+    new Date("2021-12-25T12:20:00"),
+  ),
+  [
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: { type: "never" },
+      state: "started",
+      startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+      endEpochMs: null,
+    },
+  ],
+);
+assertJSONEqual(
+  applyAction(
+    { type: "cancel" },
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: { type: "never" },
+      state: "started",
+      startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+      endEpochMs: null,
+    },
+    new Date("2021-12-25T12:20:00"),
+  ),
+  [
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: { type: "never" },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+  ],
+);
+assertJSONEqual(
+  applyAction(
+    { type: "complete" },
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: { type: "never" },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+    new Date("2021-12-25T12:20:00"),
+  ),
+  [
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: { type: "never" },
+      state: "completed",
+      startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+      endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+    },
+  ],
+);
+assertJSONEqual(
+  applyAction(
+    { type: "complete" },
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: { type: "never" },
+      state: "started",
+      startEpochMs: new Date("2021-01-01T00:00:00").valueOf(),
+      endEpochMs: null,
+    },
+    new Date("2021-12-25T12:20:00"),
+  ),
+  [
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: { type: "never" },
+      state: "completed",
+      startEpochMs: new Date("2021-01-01T00:00:00").valueOf(),
+      endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+    },
+  ],
+);
+assertJSONEqual(
+  applyAction(
+    { type: "complete" },
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: { type: "manual" },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+    new Date("2021-12-25T12:20:00"),
+  ),
+  [
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: { type: "never" },
+      state: "completed",
+      startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+      endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+    },
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: { type: "manual" },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+  ],
+);
+assertJSONEqual(
+  applyAction(
+    { type: "complete" },
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: {
+        type: "schedule",
+        base: new Date("2021-12-01T00:00:00"),
+        period: { days: 1 },
+        offsets: [{}],
+      },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+    new Date("2021-12-25T12:20:00"),
+  ),
+  [
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: { type: "never" },
+      state: "completed",
+      startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+      endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+    },
+    {
+      name: "foo",
+      scheduledDate: new Date("2021-12-26T00:00:00"),
+      repeat: {
+        type: "schedule",
+        base: new Date("2021-12-25T00:00:00"),
+        period: { days: 1 },
+        offsets: [{}],
+      },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+  ],
+);
+assertJSONEqual(
+  applyAction(
+    { type: "seekBack" },
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: { type: "delay", delay: { days: 1 } },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+    new Date("2021-12-25T12:20:00"),
+  ),
+  [
+    {
+      name: "foo",
+      scheduledDate: null,
+      repeat: { type: "delay", delay: { days: 1 } },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+  ],
+);
+assertJSONEqual(
+  applyAction(
+    { type: "seekBack" },
+    {
+      name: "foo",
+      scheduledDate: new Date("2021-12-15T00:00:00"),
+      repeat: { type: "manual" },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+    new Date("2021-12-25T12:20:00"),
+  ),
+  [
+    {
+      name: "foo",
+      scheduledDate: new Date("2021-12-15T00:00:00"),
+      repeat: { type: "manual" },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+  ],
+);
+assertJSONEqual(
+  applyAction(
+    { type: "seekBack" },
+    {
+      name: "foo",
+      scheduledDate: new Date("2021-12-15T00:00:00"),
+      repeat: { type: "delay", delay: { days: 1 } },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+    new Date("2021-12-25T12:20:00"),
+  ),
+  [
+    {
+      name: "foo",
+      scheduledDate: new Date("2021-12-14T00:00:00"),
+      repeat: { type: "delay", delay: { days: 1 } },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+  ],
+);
+assertJSONEqual(
+  applyAction(
+    { type: "seekForward" },
+    {
+      name: "foo",
+      scheduledDate: new Date("2021-12-15T00:00:00"),
+      repeat: {
+        type: "schedule",
+        base: new Date("2021-11-01T00:00:00"),
+        period: { months: 1 },
+        offsets: [{ days: 10 }],
+      },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+    new Date("2021-12-25T12:20:00"),
+  ),
+  [
+    {
+      name: "foo",
+      scheduledDate: new Date("2022-01-11T00:00:00"),
+      repeat: {
+        type: "schedule",
+        base: new Date("2021-12-01T00:00:00"),
+        period: { months: 1 },
+        offsets: [{ days: 10 }],
+      },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+  ],
+);
