@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
-    "target": "ES5",
+    "target": "ES6",
+    "lib": ["DOM", "ES2019"],
     "strict": true,
     "noEmit": true,
     "allowJs": true,

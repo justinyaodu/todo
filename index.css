@@ -86,3 +86,7 @@ select {
   align-items: center;
   gap: 1rem;
 }
+
+.task-editor-error {
+  color: #c00;
+}

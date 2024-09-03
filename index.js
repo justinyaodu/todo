@@ -1,4 +1,38 @@
 /**
+ * @template T
+ * @typedef {{ ok: true, value: T }} Ok<T>
+ */
+
+/**
+ * @template E
+ * @typedef {{ ok: false, error: E }} Err<E>
+ */
+
+/**
+ * @template T
+ * @template E
+ * @typedef {Ok<T> | Err<E>} Result<T,E>
+ */
+
+/**
+ * @template T
+ * @param {T} value
+ * @returns {Ok<T>}
+ */
+function ok(value) {
+  return { ok: true, value };
+}
+
+/**
+ * @template E
+ * @param {E} error
+ * @returns {Err<E>}
+ */
+function err(error) {
+  return { ok: false, error };
+}
+
+/**
  * @param {never} value
  * @returns {never}
  */
@@ -120,15 +154,19 @@ function serializeDuration(duration) {
   if (minutes) {
     s += `${String(minutes)}M`;
   }
-  s += String(seconds ?? 0);
-  if (milliseconds) {
-    let ms = String(milliseconds);
-    while (ms.length < 3) {
-      ms = "0" + ms;
-    }
-    s += `.${ms}`;
+  const floatSeconds = (seconds ?? 0) + (milliseconds ?? 0) / 1000;
+  if (floatSeconds !== 0) {
+    s += `${floatSeconds.toFixed(3).replace(".000", "")}S`;
   }
-  s += "S";
+
+  if (s.endsWith("T")) {
+    s = s.substring(0, s.length - 1);
+  }
+
+  if (s === "P") {
+    s += "0D";
+  }
+
   return s;
 }
 
@@ -147,6 +185,27 @@ assertEqual(
 
 assertEqual(
   serializeDuration({
+    days: 3,
+  }),
+  "P3D",
+);
+
+assertEqual(
+  serializeDuration({
+    hours: 5,
+  }),
+  "PT5H",
+);
+
+assertEqual(
+  serializeDuration({
+    seconds: 23,
+  }),
+  "PT23S",
+);
+
+assertEqual(
+  serializeDuration({
     years: 0,
     months: 0,
     days: 0,
@@ -155,10 +214,10 @@ assertEqual(
     seconds: 0,
     milliseconds: 0,
   }),
-  "PT0S",
+  "P0D",
 );
 
-assertEqual(serializeDuration({}), "PT0S");
+assertEqual(serializeDuration({}), "P0D");
 
 /**
  * @param {string} s
@@ -174,10 +233,14 @@ function parseDuration(s) {
     return null;
   }
 
-  const duration = {};
+  const [_, rawYears, rawMonths, rawDays, rawHours, rawMinutes, rawSeconds] =
+    groups;
 
-  const [_, years, months, days, hours, minutes, rawSeconds] = groups;
-
+  const years = parseInt(rawYears ?? "0");
+  const months = parseInt(rawMonths ?? "0");
+  const days = parseInt(rawDays ?? "0");
+  const hours = parseInt(rawHours ?? "0");
+  const minutes = parseInt(rawMinutes ?? "0");
   const floatSeconds = rawSeconds === undefined ? 0 : parseFloat(rawSeconds);
   if (isNaN(floatSeconds)) {
     return null;
@@ -186,28 +249,16 @@ function parseDuration(s) {
   const milliseconds = secondsAndMs % 1000;
   const seconds = (secondsAndMs - milliseconds) / 1000;
 
-  if (years) {
-    duration.years = parseInt(years);
-  }
-  if (months) {
-    duration.months = parseInt(months);
-  }
-  if (days) {
-    duration.days = parseInt(days);
-  }
-  if (hours) {
-    duration.hours = parseInt(hours);
-  }
-  if (minutes) {
-    duration.minutes = parseInt(minutes);
-  }
-  if (seconds) {
-    duration.seconds = seconds;
-  }
-  if (milliseconds) {
-    duration.milliseconds = milliseconds;
-  }
-  return duration;
+  const duration = {
+    years,
+    months,
+    days,
+    hours,
+    minutes,
+    seconds,
+    milliseconds,
+  };
+  return Object.fromEntries(Object.entries(duration).filter((e) => e[1] !== 0));
 }
 
 assertJSONEqual(parseDuration("T0S"), null);
@@ -342,6 +393,38 @@ assertDatesEqual(
 /** @typedef {OnceRepeat | ManualRepeat | DelayRepeat | ScheduleRepeat} Repeat */
 
 /**
+ * @param {Repeat} repeat
+ * @returns {string}
+ */
+function serializeRepeat(repeat) {
+  switch (repeat.type) {
+    case "once":
+    case "manual":
+      return repeat.type;
+    case "delay":
+      return `${repeat.type} ${serializeDuration(repeat.delay)}`;
+    case "schedule":
+      return `${repeat.type} ${serializeDate(repeat.base)} ${serializeDuration(repeat.period)} ${repeat.offsets.map((o) => serializeDuration(o)).join(" ")}`;
+  }
+}
+
+assertEqual(serializeRepeat({ type: "once" }), "once");
+assertEqual(serializeRepeat({ type: "manual" }), "manual");
+assertEqual(
+  serializeRepeat({ type: "delay", delay: { days: 7 } }),
+  "delay P7D",
+);
+assertEqual(
+  serializeRepeat({
+    type: "schedule",
+    base: new Date("2021-01-01"),
+    period: { months: 1 },
+    offsets: [{}],
+  }),
+  `schedule ${serializeDate(new Date("2021-01-01"))} P1M P0D`,
+);
+
+/**
  * @param {string} s
  * @returns {Repeat | null}
  */
@@ -387,6 +470,12 @@ assertJSONEqual(parseRepeat("manual"), { type: "manual" });
 assertJSONEqual(parseRepeat("delay P7D"), {
   type: "delay",
   delay: { days: 7 },
+});
+assertJSONEqual(parseRepeat("schedule 2021-01-01 P1M P0D"), {
+  type: "schedule",
+  base: new Date("2021-01-01"),
+  period: { months: 1 },
+  offsets: [{}],
 });
 
 /**
@@ -997,19 +1086,22 @@ class Component {
 
   /**
    * @param {HTMLElement} parent
+   * @returns {this}
    */
   appendTo(parent) {
-    this.moveBefore(parent, null);
+    return this.moveBefore(parent, null);
   }
 
   /**
    * @param {HTMLElement} parent
    * @param {Node | null} reference
+   * @returns {this}
    */
   moveBefore(parent, reference) {
     for (const element of this.rootElements) {
       parent.insertBefore(element, reference);
     }
+    return this;
   }
 }
 
@@ -1101,7 +1193,7 @@ function makeDiv(...classes) {
   return div;
 }
 
-/** @typedef {{ task: Task, editing: boolean }} TaskEditorState */
+/** @typedef {{ task: Task, editing: boolean, validationError: string }} TaskEditorState */
 /** @extends {Component<TaskEditorState>} */
 class TaskEditor extends Component {
   constructor() {
@@ -1115,6 +1207,7 @@ class TaskEditor extends Component {
         endEpochMs: null,
       },
       editing: true,
+      validationError: "",
     });
 
     this.date = this.addRootElement(makeDiv("task-date"));
@@ -1139,21 +1232,29 @@ class TaskEditor extends Component {
       makeDiv("task-editor-label-input-grid"),
     );
 
-    this.nameInput = new LabeledComponent({
+    this.labeledNameInput = new LabeledComponent({
       labelText: "Name",
       child: new TextInputComponent(),
-    });
-    this.nameInput.appendTo(this.labelInputGrid);
+    }).appendTo(this.labelInputGrid);
+    this.nameInput = this.labeledNameInput.child.input;
 
-    this.scheduledDateInput = new LabeledComponent({
+    this.labeledScheduledDateInput = new LabeledComponent({
       labelText: "Date",
       child: new DateInputComponent(),
-    });
-    this.scheduledDateInput.appendTo(this.labelInputGrid);
+    }).appendTo(this.labelInputGrid);
+    this.scheduledDateInput = this.labeledScheduledDateInput.child.input;
+
+    this.labeledRepeatInput = new LabeledComponent({
+      labelText: "Repeat",
+      child: new TextInputComponent(),
+    }).appendTo(this.labelInputGrid);
+    this.repeatInput = this.labeledRepeatInput.child.input;
 
     this.editorBottomButtons = this.editor.appendChild(
       makeDiv("task-editor-buttons"),
     );
+
+    this.editorError = this.editor.appendChild(makeDiv("task-editor-error"));
 
     this.saveButton = this.editorBottomButtons.appendChild(
       makeButton("💾", () => {
@@ -1189,11 +1290,40 @@ class TaskEditor extends Component {
         ?.toISOString()
         .substring(0, "YYYY-MM-DD".length) ?? "no date";
 
-    this.nameInput.child.input.value = this.state.task.name;
-    this.scheduledDateInput.child.input.value =
+    this.nameInput.value = this.state.task.name;
+    this.scheduledDateInput.value =
       this.state.task.scheduledDate
         ?.toISOString()
         .substring(0, "YYYY-MM-DD".length) ?? "";
+    this.repeatInput.value = serializeRepeat(this.state.task.repeat);
+
+    this.renderValidationError();
+  }
+
+  renderValidationError() {
+    this.editorError.hidden = this.state.validationError === "";
+    this.editorError.innerText = this.state.validationError;
+  }
+
+  /**
+   * @returns {Result<Task, string>}
+   */
+  getTaskFromEditor() {
+    const name = this.nameInput.value;
+    if (name === "") {
+      return err("Name is required");
+    }
+
+    const rawScheduledDate = this.scheduledDateInput.value;
+    const scheduledDate =
+      rawScheduledDate === "" ? null : new Date(rawScheduledDate);
+
+    const repeat = parseRepeat(this.repeatInput.value);
+    if (repeat === null) {
+      return err("Invalid repeat");
+    }
+
+    return ok({ ...this.state.task, name, scheduledDate, repeat });
   }
 
   onComplete() {
@@ -1206,13 +1336,25 @@ class TaskEditor extends Component {
   }
 
   onSave() {
-    console.log("todo: save");
-    this.state = { ...this.state, editing: false };
-    this.render();
+    const result = this.getTaskFromEditor();
+    if (result.ok) {
+      this.state = {
+        task: { ...this.state.task, ...result.value },
+        editing: false,
+        validationError: "",
+      };
+      this.render();
+    } else {
+      this.state = {
+        ...this.state,
+        validationError: result.error,
+      };
+      this.renderValidationError();
+    }
   }
 
   onEditorCancel() {
-    this.state = { ...this.state, editing: false };
+    this.state = { ...this.state, editing: false, validationError: "" };
     this.render();
   }
 
