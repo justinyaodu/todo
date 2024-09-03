@@ -1,0 +1,88 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  overflow-wrap: break-word;
+}
+
+* {
+  font: inherit;
+  margin: 0;
+  padding: 0;
+}
+
+:where(:not(button, input, select)) {
+  border: 0;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+:root {
+  background: #fff;
+  color: #000;
+  font-family: sans-serif;
+  font-weight: 400;
+  line-height: 1;
+  padding: 1rem;
+}
+
+button,
+select {
+  padding: 0.25rem;
+}
+
+.tasks {
+  display: grid;
+  grid-template-columns: max-content 1fr max-content;
+  border: 1px solid #ccc;
+  border-bottom: 0;
+}
+
+.tasks > * {
+  padding: 0.5rem;
+  border-bottom: 1px solid #ccc;
+}
+
+.task-controls {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.task-date,
+.task-name {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+}
+
+.task-date {
+  border-right: 1px solid #ccc;
+}
+
+.task-editor {
+  grid-column: 1 / -1;
+  padding: 1rem;
+}
+
+.task-editor > * + * {
+  margin-top: 1rem;
+}
+
+.task-editor-label-input-grid {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  align-items: center;
+  gap: 1rem;
+}
+
+.task-editor-buttons {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  gap: 1rem;
+}

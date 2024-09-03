@@ -335,19 +335,19 @@ assertDatesEqual(
   new Date("2021-12-25T00:00"),
 );
 
-/** @typedef {{ type: "never" }} NeverRepeat */
+/** @typedef {{ type: "once" }} OnceRepeat */
 /** @typedef {{ type: "manual" }} ManualRepeat */
 /** @typedef {{ type: "delay", delay: Duration }} DelayRepeat */
 /** @typedef {{ type: "schedule", base: ImmutableDate, period: Duration, offsets: Duration[] }} ScheduleRepeat */
-/** @typedef {NeverRepeat | ManualRepeat | DelayRepeat | ScheduleRepeat} Repeat */
+/** @typedef {OnceRepeat | ManualRepeat | DelayRepeat | ScheduleRepeat} Repeat */
 
 /**
  * @param {string} s
  * @returns {Repeat | null}
  */
 function parseRepeat(s) {
-  if (s === "never") {
-    return { type: "never" };
+  if (s === "once") {
+    return { type: "once" };
   }
   if (s === "manual") {
     return { type: "manual" };
@@ -382,7 +382,7 @@ function parseRepeat(s) {
   return null;
 }
 
-assertJSONEqual(parseRepeat("never"), { type: "never" });
+assertJSONEqual(parseRepeat("once"), { type: "once" });
 assertJSONEqual(parseRepeat("manual"), { type: "manual" });
 assertJSONEqual(parseRepeat("delay P7D"), {
   type: "delay",
@@ -397,7 +397,7 @@ assertJSONEqual(parseRepeat("delay P7D"), {
  */
 function repeatSeek(repeat, from, forward) {
   switch (repeat.type) {
-    case "never":
+    case "once":
     case "manual":
       return null;
     case "delay":
@@ -436,7 +436,7 @@ function repeatSeek(repeat, from, forward) {
 }
 
 assertJSONEqual(
-  repeatSeek({ type: "never" }, new Date("2021-12-25T12:20:00"), true),
+  repeatSeek({ type: "once" }, new Date("2021-12-25T12:20:00"), true),
   null,
 );
 assertJSONEqual(
@@ -535,7 +535,7 @@ function repeatRebase(repeat, near) {
   }
 
   switch (repeat.type) {
-    case "never":
+    case "once":
     case "manual":
     case "delay":
       return repeat;
@@ -548,8 +548,8 @@ function repeatRebase(repeat, near) {
 }
 
 assertJSONEqual(
-  repeatRebase({ type: "never" }, new Date("2021-12-25T12:20:00")),
-  { type: "never" },
+  repeatRebase({ type: "once" }, new Date("2021-12-25T12:20:00")),
+  { type: "once" },
 );
 assertJSONEqual(
   repeatRebase({ type: "manual" }, new Date("2021-12-25T12:20:00")),
@@ -627,14 +627,14 @@ function applyAction(action, task, now) {
       const tasks = [
         {
           ...task,
-          repeat: { type: "never" },
+          repeat: { type: "once" },
           state: "completed",
           startEpochMs: task.startEpochMs ?? now.valueOf(),
           endEpochMs: now.valueOf(),
         },
       ];
 
-      if (task.repeat.type !== "never") {
+      if (task.repeat.type !== "once") {
         const repeat = repeatRebase(task.repeat, now);
         const scheduledDate = repeatSeek(repeat, now, true);
         tasks.push({
@@ -669,7 +669,7 @@ assertJSONEqual(
     {
       name: "foo",
       scheduledDate: null,
-      repeat: { type: "never" },
+      repeat: { type: "once" },
       state: "pending",
       startEpochMs: null,
       endEpochMs: null,
@@ -684,7 +684,7 @@ assertJSONEqual(
     {
       name: "foo",
       scheduledDate: null,
-      repeat: { type: "never" },
+      repeat: { type: "once" },
       state: "pending",
       startEpochMs: null,
       endEpochMs: null,
@@ -695,7 +695,7 @@ assertJSONEqual(
     {
       name: "foo",
       scheduledDate: null,
-      repeat: { type: "never" },
+      repeat: { type: "once" },
       state: "started",
       startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
       endEpochMs: null,
@@ -708,7 +708,7 @@ assertJSONEqual(
     {
       name: "foo",
       scheduledDate: null,
-      repeat: { type: "never" },
+      repeat: { type: "once" },
       state: "started",
       startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
       endEpochMs: null,
@@ -719,7 +719,7 @@ assertJSONEqual(
     {
       name: "foo",
       scheduledDate: null,
-      repeat: { type: "never" },
+      repeat: { type: "once" },
       state: "pending",
       startEpochMs: null,
       endEpochMs: null,
@@ -732,7 +732,7 @@ assertJSONEqual(
     {
       name: "foo",
       scheduledDate: null,
-      repeat: { type: "never" },
+      repeat: { type: "once" },
       state: "pending",
       startEpochMs: null,
       endEpochMs: null,
@@ -743,7 +743,7 @@ assertJSONEqual(
     {
       name: "foo",
       scheduledDate: null,
-      repeat: { type: "never" },
+      repeat: { type: "once" },
       state: "completed",
       startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
       endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
@@ -756,7 +756,7 @@ assertJSONEqual(
     {
       name: "foo",
       scheduledDate: null,
-      repeat: { type: "never" },
+      repeat: { type: "once" },
       state: "started",
       startEpochMs: new Date("2021-01-01T00:00:00").valueOf(),
       endEpochMs: null,
@@ -767,7 +767,7 @@ assertJSONEqual(
     {
       name: "foo",
       scheduledDate: null,
-      repeat: { type: "never" },
+      repeat: { type: "once" },
       state: "completed",
       startEpochMs: new Date("2021-01-01T00:00:00").valueOf(),
       endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
@@ -791,7 +791,7 @@ assertJSONEqual(
     {
       name: "foo",
       scheduledDate: null,
-      repeat: { type: "never" },
+      repeat: { type: "once" },
       state: "completed",
       startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
       endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
@@ -828,7 +828,7 @@ assertJSONEqual(
     {
       name: "foo",
       scheduledDate: null,
-      repeat: { type: "never" },
+      repeat: { type: "once" },
       state: "completed",
       startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
       endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
@@ -954,3 +954,285 @@ assertJSONEqual(
     },
   ],
 );
+
+/**
+ * @template T
+ */
+class Component {
+  static idCounter = 0;
+
+  /**
+   * @returns {string}
+   */
+  static nextId() {
+    return String(Component.idCounter++);
+  }
+
+  /** @type {string} */
+  id;
+
+  /** @type {T} */
+  state;
+
+  /** @type {HTMLElement[]} */
+  rootElements;
+
+  /**
+   * @param {T} state
+   */
+  constructor(state) {
+    this.id = Component.nextId();
+    this.state = state;
+    this.rootElements = [];
+  }
+
+  /**
+   * @template {HTMLElement} T
+   * @param {T} element
+   */
+  addRootElement(element) {
+    this.rootElements.push(element);
+    return element;
+  }
+
+  /**
+   * @param {HTMLElement} parent
+   */
+  appendTo(parent) {
+    this.moveBefore(parent, null);
+  }
+
+  /**
+   * @param {HTMLElement} parent
+   * @param {Node | null} reference
+   */
+  moveBefore(parent, reference) {
+    for (const element of this.rootElements) {
+      parent.insertBefore(element, reference);
+    }
+  }
+}
+
+/** @typedef {Component<any> & { getIdForLabel(): string }} LabelableComponent */
+
+/**
+ * @template {LabelableComponent} T
+ * @typedef {{ labelText: string, child: T }} LabeledComponentState
+ */
+
+/**
+ * @template {LabelableComponent} T
+ * @extends {Component<LabeledComponentState<T>>}
+ */
+class LabeledComponent extends Component {
+  /**
+   * @param {LabeledComponentState<T>} state
+   */
+  constructor(state) {
+    super(state);
+    this.child = state.child;
+
+    const label = this.addRootElement(document.createElement("label"));
+    label.htmlFor = this.child.getIdForLabel();
+    label.innerText = state.labelText;
+
+    this.rootElements.push(...this.child.rootElements);
+  }
+}
+
+/**
+ * @extends {Component<undefined>}
+ * @implements {LabelableComponent}
+ */
+class DateInputComponent extends Component {
+  constructor() {
+    super(undefined);
+
+    this.input = this.addRootElement(document.createElement("input"));
+    this.input.id = this.id;
+    this.input.type = "date";
+  }
+
+  getIdForLabel() {
+    return this.input.id;
+  }
+}
+
+/**
+ * @extends {Component<undefined>}
+ * @implements {LabelableComponent}
+ */
+class TextInputComponent extends Component {
+  constructor() {
+    super(undefined);
+
+    this.input = this.addRootElement(document.createElement("input"));
+    this.input.id = this.id;
+    this.input.type = "text";
+  }
+
+  getIdForLabel() {
+    return this.input.id;
+  }
+}
+
+/**
+ * @param {string} text
+ * @param {() => void} [onClick]
+ * @returns {HTMLButtonElement}
+ */
+function makeButton(text, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.innerText = text;
+  if (onClick !== undefined) {
+    button.addEventListener("click", onClick);
+  }
+  return button;
+}
+
+/**
+ * @returns {HTMLDivElement}
+ * @param {string[]} classes
+ */
+function makeDiv(...classes) {
+  const div = document.createElement("div");
+  div.classList.add(...classes);
+  return div;
+}
+
+/** @typedef {{ task: Task, editing: boolean }} TaskEditorState */
+/** @extends {Component<TaskEditorState>} */
+class TaskEditor extends Component {
+  constructor() {
+    super({
+      task: {
+        name: "foo",
+        scheduledDate: new Date("2024-09-03"),
+        repeat: { type: "once" },
+        state: "pending",
+        startEpochMs: null,
+        endEpochMs: null,
+      },
+      editing: true,
+    });
+
+    this.date = this.addRootElement(makeDiv("task-date"));
+    this.name = this.addRootElement(makeDiv("task-name"));
+    this.controls = this.addRootElement(makeDiv("task-controls"));
+
+    this.completeButton = this.controls.appendChild(
+      makeButton("✅", () => {
+        this.onComplete();
+      }),
+    );
+
+    this.editButton = this.controls.appendChild(
+      makeButton("✏️", () => {
+        this.onEdit();
+      }),
+    );
+
+    this.editor = this.addRootElement(makeDiv("task-editor"));
+
+    this.labelInputGrid = this.editor.appendChild(
+      makeDiv("task-editor-label-input-grid"),
+    );
+
+    this.nameInput = new LabeledComponent({
+      labelText: "Name",
+      child: new TextInputComponent(),
+    });
+    this.nameInput.appendTo(this.labelInputGrid);
+
+    this.scheduledDateInput = new LabeledComponent({
+      labelText: "Date",
+      child: new DateInputComponent(),
+    });
+    this.scheduledDateInput.appendTo(this.labelInputGrid);
+
+    this.editorBottomButtons = this.editor.appendChild(
+      makeDiv("task-editor-buttons"),
+    );
+
+    this.saveButton = this.editorBottomButtons.appendChild(
+      makeButton("💾", () => {
+        this.onSave();
+      }),
+    );
+
+    this.deleteButton = this.editorBottomButtons.appendChild(
+      makeButton("🗑️", () => {
+        this.onDelete();
+      }),
+    );
+
+    this.editorCancelButton = this.editorBottomButtons.appendChild(
+      makeButton("❌️", () => {
+        this.onEditorCancel();
+      }),
+    );
+
+    this.render();
+  }
+
+  render() {
+    const editing = this.state.editing;
+    this.name.hidden = editing;
+    this.date.hidden = editing;
+    this.controls.hidden = editing;
+    this.editor.hidden = !editing;
+
+    this.name.innerText = this.state.task.name;
+    this.date.innerText =
+      this.state.task.scheduledDate
+        ?.toISOString()
+        .substring(0, "YYYY-MM-DD".length) ?? "no date";
+
+    this.nameInput.child.input.value = this.state.task.name;
+    this.scheduledDateInput.child.input.value =
+      this.state.task.scheduledDate
+        ?.toISOString()
+        .substring(0, "YYYY-MM-DD".length) ?? "";
+  }
+
+  onComplete() {
+    console.log("todo: complete");
+  }
+
+  onEdit() {
+    this.state = { ...this.state, editing: true };
+    this.render();
+  }
+
+  onSave() {
+    console.log("todo: save");
+    this.state = { ...this.state, editing: false };
+    this.render();
+  }
+
+  onEditorCancel() {
+    this.state = { ...this.state, editing: false };
+    this.render();
+  }
+
+  onDelete() {
+    if (!confirm("Delete this event?")) {
+      return;
+    }
+    console.log("todo: delete");
+  }
+}
+
+function browserMain() {
+  const tasks = document.body.appendChild(makeDiv("tasks"));
+  new TaskEditor().appendTo(tasks);
+}
+
+if (typeof window !== "undefined") {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", browserMain);
+  } else {
+    browserMain();
+  }
+}
