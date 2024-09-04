@@ -683,60 +683,77 @@ assertJSONEqual(
 /** @typedef {{ type: "seekForward" }} SeekForwardAction */
 /** @typedef {DeleteAction | StartAction | CancelAction | CompleteAction | SeekBackAction | SeekForwardAction} Action */
 
+/** @typedef {{ type: "create", task: Task }} TaskCreateEvent */
+/** @typedef {{ type: "delete" }} TaskDeleteEvent */
+/** @typedef {{ type: "update", task: Task }} TaskUpdateEvent */
+/** @typedef {TaskCreateEvent | TaskDeleteEvent | TaskUpdateEvent} TaskEvent */
+
 /**
  * @param {Action} action
  * @param {Task} task
  * @param {ImmutableDate} now
- * @returns {Task[]}
+ * @returns {TaskEvent[]}
  */
 function applyAction(action, task, now) {
   switch (action.type) {
     case "delete":
-      return [];
+      return [{ type: "delete" }];
     case "start":
       return [
         {
-          ...task,
-          state: "started",
-          startEpochMs: now.valueOf(),
-          endEpochMs: null,
+          type: "update",
+          task: {
+            ...task,
+            state: "started",
+            startEpochMs: now.valueOf(),
+            endEpochMs: null,
+          },
         },
       ];
     case "cancel":
       return [
         {
-          ...task,
-          state: "pending",
-          startEpochMs: null,
-          endEpochMs: null,
+          type: "update",
+          task: {
+            ...task,
+            state: "pending",
+            startEpochMs: null,
+            endEpochMs: null,
+          },
         },
       ];
     case "complete": {
-      /** @type {Task[]} */
-      const tasks = [
+      /** @type {TaskEvent[]} */
+      const events = [
         {
-          ...task,
-          repeat: { type: "once" },
-          state: "completed",
-          startEpochMs: task.startEpochMs ?? now.valueOf(),
-          endEpochMs: now.valueOf(),
+          type: "update",
+          task: {
+            ...task,
+            repeat: { type: "once" },
+            state: "completed",
+            startEpochMs: task.startEpochMs ?? now.valueOf(),
+            endEpochMs: now.valueOf(),
+          },
         },
       ];
 
       if (task.repeat.type !== "once") {
         const repeat = repeatRebase(task.repeat, now);
         const scheduledDate = repeatSeek(repeat, now, true);
-        tasks.push({
-          ...task,
-          scheduledDate,
-          repeat,
-          state: "pending",
-          startEpochMs: null,
-          endEpochMs: null,
+        events.push({
+          type: "create",
+          task: {
+            ...task,
+            scheduledDate,
+            repeat,
+            state: "pending",
+            startEpochMs: null,
+            endEpochMs: null,
+          },
         });
       }
 
-      return tasks;
+      return events;
     }
     case "seekBack":
     case "seekForward": {
@@ -747,7 +764,7 @@ function applyAction(action, task, now) {
           ? null
           : (repeatSeek(repeat, task.scheduledDate, forward) ??
             task.scheduledDate);
-      return [{ ...task, scheduledDate, repeat }];
+      return [{ type: "update", task: { ...task, scheduledDate, repeat } }];
     }
   }
 }
@@ -765,7 +782,7 @@ assertJSONEqual(
     },
     new Date("2021-12-25T12:20:00"),
   ),
-  [],
+  [{ type: "delete" }],
 );
 assertJSONEqual(
   applyAction(
@@ -782,12 +799,15 @@ assertJSONEqual(
   ),
   [
     {
-      name: "foo",
-      scheduledDate: null,
-      repeat: { type: "once" },
-      state: "started",
-      startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
-      endEpochMs: null,
+      type: "update",
+      task: {
+        name: "foo",
+        scheduledDate: null,
+        repeat: { type: "once" },
+        state: "started",
+        startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+        endEpochMs: null,
+      },
     },
   ],
 );
@@ -806,12 +826,15 @@ assertJSONEqual(
   ),
   [
     {
-      name: "foo",
-      scheduledDate: null,
-      repeat: { type: "once" },
-      state: "pending",
-      startEpochMs: null,
-      endEpochMs: null,
+      type: "update",
+      task: {
+        name: "foo",
+        scheduledDate: null,
+        repeat: { type: "once" },
+        state: "pending",
+        startEpochMs: null,
+        endEpochMs: null,
+      },
     },
   ],
 );
@@ -830,12 +853,15 @@ assertJSONEqual(
   ),
   [
     {
-      name: "foo",
-      scheduledDate: null,
-      repeat: { type: "once" },
-      state: "completed",
-      startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
-      endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+      type: "update",
+      task: {
+        name: "foo",
+        scheduledDate: null,
+        repeat: { type: "once" },
+        state: "completed",
+        startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+        endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+      },
     },
   ],
 );
@@ -854,12 +880,15 @@ assertJSONEqual(
   ),
   [
     {
-      name: "foo",
-      scheduledDate: null,
-      repeat: { type: "once" },
-      state: "completed",
-      startEpochMs: new Date("2021-01-01T00:00:00").valueOf(),
-      endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+      type: "update",
+      task: {
+        name: "foo",
+        scheduledDate: null,
+        repeat: { type: "once" },
+        state: "completed",
+        startEpochMs: new Date("2021-01-01T00:00:00").valueOf(),
+        endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+      },
     },
   ],
 );
@@ -878,20 +907,26 @@ assertJSONEqual(
   ),
   [
     {
-      name: "foo",
-      scheduledDate: null,
-      repeat: { type: "once" },
-      state: "completed",
-      startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
-      endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+      type: "update",
+      task: {
+        name: "foo",
+        scheduledDate: null,
+        repeat: { type: "once" },
+        state: "completed",
+        startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+        endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+      },
     },
     {
-      name: "foo",
-      scheduledDate: null,
-      repeat: { type: "manual" },
-      state: "pending",
-      startEpochMs: null,
-      endEpochMs: null,
+      type: "create",
+      task: {
+        name: "foo",
+        scheduledDate: null,
+        repeat: { type: "manual" },
+        state: "pending",
+        startEpochMs: null,
+        endEpochMs: null,
+      },
     },
   ],
 );
@@ -915,25 +950,31 @@ assertJSONEqual(
   ),
   [
     {
-      name: "foo",
-      scheduledDate: null,
-      repeat: { type: "once" },
-      state: "completed",
-      startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
-      endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
-    },
-    {
-      name: "foo",
-      scheduledDate: new Date("2021-12-26T00:00:00"),
-      repeat: {
-        type: "schedule",
-        base: new Date("2021-12-25T00:00:00"),
-        period: { days: 1 },
-        offsets: [{}],
+      type: "update",
+      task: {
+        name: "foo",
+        scheduledDate: null,
+        repeat: { type: "once" },
+        state: "completed",
+        startEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
+        endEpochMs: new Date("2021-12-25T12:20:00").valueOf(),
       },
-      state: "pending",
-      startEpochMs: null,
-      endEpochMs: null,
+    },
+    {
+      type: "create",
+      task: {
+        name: "foo",
+        scheduledDate: new Date("2021-12-26T00:00:00"),
+        repeat: {
+          type: "schedule",
+          base: new Date("2021-12-25T00:00:00"),
+          period: { days: 1 },
+          offsets: [{}],
+        },
+        state: "pending",
+        startEpochMs: null,
+        endEpochMs: null,
+      },
     },
   ],
 );
@@ -952,12 +993,15 @@ assertJSONEqual(
   ),
   [
     {
-      name: "foo",
-      scheduledDate: null,
-      repeat: { type: "delay", delay: { days: 1 } },
-      state: "pending",
-      startEpochMs: null,
-      endEpochMs: null,
+      type: "update",
+      task: {
+        name: "foo",
+        scheduledDate: null,
+        repeat: { type: "delay", delay: { days: 1 } },
+        state: "pending",
+        startEpochMs: null,
+        endEpochMs: null,
+      },
     },
   ],
 );
@@ -976,12 +1020,15 @@ assertJSONEqual(
   ),
   [
     {
-      name: "foo",
-      scheduledDate: new Date("2021-12-15T00:00:00"),
-      repeat: { type: "manual" },
-      state: "pending",
-      startEpochMs: null,
-      endEpochMs: null,
+      type: "update",
+      task: {
+        name: "foo",
+        scheduledDate: new Date("2021-12-15T00:00:00"),
+        repeat: { type: "manual" },
+        state: "pending",
+        startEpochMs: null,
+        endEpochMs: null,
+      },
     },
   ],
 );
@@ -1000,12 +1047,15 @@ assertJSONEqual(
   ),
   [
     {
-      name: "foo",
-      scheduledDate: new Date("2021-12-14T00:00:00"),
-      repeat: { type: "delay", delay: { days: 1 } },
-      state: "pending",
-      startEpochMs: null,
-      endEpochMs: null,
+      type: "update",
+      task: {
+        name: "foo",
+        scheduledDate: new Date("2021-12-14T00:00:00"),
+        repeat: { type: "delay", delay: { days: 1 } },
+        state: "pending",
+        startEpochMs: null,
+        endEpochMs: null,
+      },
     },
   ],
 );
@@ -1029,17 +1079,20 @@ assertJSONEqual(
   ),
   [
     {
-      name: "foo",
-      scheduledDate: new Date("2022-01-11T00:00:00"),
-      repeat: {
-        type: "schedule",
-        base: new Date("2021-12-01T00:00:00"),
-        period: { months: 1 },
-        offsets: [{ days: 10 }],
+      type: "update",
+      task: {
+        name: "foo",
+        scheduledDate: new Date("2022-01-11T00:00:00"),
+        repeat: {
+          type: "schedule",
+          base: new Date("2021-12-01T00:00:00"),
+          period: { months: 1 },
+          offsets: [{ days: 10 }],
+        },
+        state: "pending",
+        startEpochMs: null,
+        endEpochMs: null,
       },
-      state: "pending",
-      startEpochMs: null,
-      endEpochMs: null,
     },
   ],
 );
@@ -1193,22 +1246,14 @@ function makeDiv(...classes) {
   return div;
 }
 
-/** @typedef {{ task: Task, editing: boolean, validationError: string }} TaskEditorState */
-/** @extends {Component<TaskEditorState>} */
-class TaskEditor extends Component {
-  constructor() {
-    super({
-      task: {
-        name: "foo",
-        scheduledDate: new Date("2024-09-03"),
-        repeat: { type: "once" },
-        state: "pending",
-        startEpochMs: null,
-        endEpochMs: null,
-      },
-      editing: true,
-      validationError: "",
-    });
+/** @typedef {{ task: Task, editor: { task: Task, error: string | null } | null, callback: (event: TaskEvent) => void }} TaskViewState */
+/** @extends {Component<TaskViewState>} */
+class TaskView extends Component {
+  /**
+   * @param {TaskViewState} state
+   */
+  constructor(state) {
+    super(state);
 
     this.date = this.addRootElement(makeDiv("task-date"));
     this.name = this.addRootElement(makeDiv("task-name"));
@@ -1262,23 +1307,26 @@ class TaskEditor extends Component {
       }),
     );
 
-    this.deleteButton = this.editorBottomButtons.appendChild(
-      makeButton("🗑️", () => {
-        this.onDelete();
-      }),
-    );
-
     this.editorCancelButton = this.editorBottomButtons.appendChild(
       makeButton("❌️", () => {
         this.onEditorCancel();
       }),
     );
 
-    this.render();
+    this.deleteButton = this.editorBottomButtons.appendChild(
+      makeButton("🗑️", () => {
+        this.onDelete();
+      }),
+    );
+
+    this.render(true);
   }
 
-  render() {
-    const editing = this.state.editing;
+  /**
+   * @param {boolean} updateEditorInputs
+   */
+  render(updateEditorInputs) {
+    const editing = this.state.editor !== null;
     this.name.hidden = editing;
     this.date.hidden = editing;
     this.controls.hidden = editing;
@@ -1290,19 +1338,18 @@ class TaskEditor extends Component {
         ?.toISOString()
         .substring(0, "YYYY-MM-DD".length) ?? "no date";
 
-    this.nameInput.value = this.state.task.name;
-    this.scheduledDateInput.value =
-      this.state.task.scheduledDate
-        ?.toISOString()
-        .substring(0, "YYYY-MM-DD".length) ?? "";
-    this.repeatInput.value = serializeRepeat(this.state.task.repeat);
+    if (updateEditorInputs) {
+      const editorTask = this.state.editor?.task ?? this.state.task;
+      this.nameInput.value = editorTask.name;
+      this.scheduledDateInput.value =
+        editorTask.scheduledDate
+          ?.toISOString()
+          .substring(0, "YYYY-MM-DD".length) ?? "";
+      this.repeatInput.value = serializeRepeat(editorTask.repeat);
+    }
 
-    this.renderValidationError();
-  }
-
-  renderValidationError() {
-    this.editorError.hidden = this.state.validationError === "";
-    this.editorError.innerText = this.state.validationError;
+    this.editorError.hidden = this.state.editor?.error === null;
+    this.editorError.innerText = this.state.editor?.error ?? "";
   }
 
   /**
@@ -1326,49 +1373,91 @@ class TaskEditor extends Component {
     return ok({ ...this.state.task, name, scheduledDate, repeat });
   }
 
-  onComplete() {
-    console.log("todo: complete");
+  /**
+   * @param {TaskEvent[]} events
+   */
+  processEvents(events) {
+    for (const event of events) {
+      if (event.type === "update") {
+        this.state.task = event.task;
+        this.render(true);
+      }
+      this.state.callback(event);
+    }
   }
 
-  onEdit() {
-    this.state = { ...this.state, editing: true };
-    this.render();
-  }
-
-  onSave() {
+  submitEditor() {
+    if (this.state.editor === null) {
+      return;
+    }
     const result = this.getTaskFromEditor();
     if (result.ok) {
       this.state = {
-        task: { ...this.state.task, ...result.value },
-        editing: false,
-        validationError: "",
+        ...this.state,
+        editor: { task: result.value, error: null },
       };
-      this.render();
     } else {
       this.state = {
         ...this.state,
-        validationError: result.error,
+        editor: { ...this.state.editor, error: result.error },
       };
-      this.renderValidationError();
+    }
+  }
+
+  onComplete() {
+    this.processEvents(
+      applyAction({ type: "complete" }, this.state.task, new Date()),
+    );
+  }
+
+  onEdit() {
+    this.state = {
+      ...this.state,
+      editor: { task: { ...this.state.task }, error: null },
+    };
+    this.render(true);
+  }
+
+  onSave() {
+    this.submitEditor();
+    if (this.state.editor?.error === null) {
+      const task = this.state.editor.task;
+      this.state = {
+        ...this.state,
+        editor: null,
+      };
+      this.processEvents([{ type: "update", task }]);
+    } else {
+      this.render(false);
     }
   }
 
   onEditorCancel() {
-    this.state = { ...this.state, editing: false, validationError: "" };
-    this.render();
+    this.state = { ...this.state, editor: null };
+    this.render(true);
   }
 
   onDelete() {
-    if (!confirm("Delete this event?")) {
-      return;
+    if (confirm("Delete this event?")) {
+      this.processEvents([{ type: "delete" }]);
     }
-    console.log("todo: delete");
   }
 }
 
 function browserMain() {
   const tasks = document.body.appendChild(makeDiv("tasks"));
-  new TaskEditor().appendTo(tasks);
+  new TaskView({
+    task: {
+      name: "foo",
+      scheduledDate: new Date("2024-09-03"),
+      repeat: { type: "once" },
+      state: "pending",
+      startEpochMs: null,
+      endEpochMs: null,
+    },
+    editor: null,
+    callback: console.log,
+  }).appendTo(tasks);
 }
 
 if (typeof window !== "undefined") {
